@@ -1,0 +1,168 @@
+---
+title: "Dtree"
+output: html_document
+date: "2023-08-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if(!require('pacman')) {install.packages('pacman')}
+pacman::p_load(tree, ISLR, readxl, tidyverse, tm, magrittr, dplyr, data.table, ggplot2, ggrepel)
+```
+
+
+```{r}
+hap_data <- fread("data/WorldHappiness.csv", header = T, stringsAsFactors = F)
+country_data <- fread("data/world-data-2023.csv", header = T, stringsAsFactors = F)
+```
+
+
+```{r}
+#NA removal
+country_data <- select(country_data,-V1)
+
+sum(is.na(country_data))
+
+na_counts <- colSums(is.na(country_data))
+na_cols <- select(country_data,names(na_counts[na_counts > 0]))
+na.vals <- colSums(is.na(na_cols))
+
+na.vals
+
+
+na_row_tf <-  apply(is.na(country_data), 1, any)
+
+na_rows <- which(na_row_tf)
+
+na_row_tf <- !na_row_tf
+no_na_rows <- which(na_row_tf)
+
+na_rows <- country_data[na_rows, ]
+na_rows
+
+no_na_country_data <- country_data[no_na_rows, ]
+
+sum(is.na(no_na_country_data))
+```
+
+
+```{r}
+# This uses every variable
+library(randomForest)
+library(caret)
+
+set.seed(123)
+
+# Split the data into predictors (X) and target variable (Y)
+X <- no_na_country_data %>% select(-happiness_score)
+Y <- no_na_country_data$happiness_score
+
+# Split the data into 70/30 testing/training sets
+train_index <- createDataPartition(Y, p = 0.7, list = FALSE)
+train_data <- X[train_index, ]
+test_data <- X[-train_index, ]
+train_target <- Y[train_index]
+test_target <- Y[-train_index]
+
+# Create a random forest model
+rf_model <- randomForest(x = train_data, y = train_target, ntree = 100, importance = TRUE, proximity = TRUE)
+
+
+# Cross Validation
+ctrl <- trainControl(method = "cv", number = 5)  # 5-fold 
+# Cross-validate the random forest model
+cv_results <- train(x = X, y = Y, method = "rf", trControl = ctrl, tuneGrid = expand.grid(mtry = 2), preProc = c("center", "scale"))
+
+
+# Print the summary of the random forest model
+rf_model
+cv_results
+plot(rf_model)
+
+# Print a plot of predictions vs. actuals
+
+predictions <- predict(rf_model, newdata = test_data)
+plot(test_target, predictions)
+varImpPlot(rf_model)
+```
+
+
+```{r}
+# This uses only the variables significant to 95%
+library(randomForest)
+library(caret)
+
+set.seed(123)
+
+significant_columns <- c("armed_forces", "forested_area", "tertiary_edu_enrollment", "life_expectancy", "maternal_mortality", "minimum_wage", "unemployment_rate", "urban_population", "longitude" )
+
+# Split the data into predictors (X) and target variable (Y)
+X <- select(no_na_country_data, all_of(significant_columns))
+Y <- no_na_country_data$happiness_score
+
+# Split the data into 70/30 testing/training sets
+train_index <- createDataPartition(Y, p = 0.7, list = FALSE)
+train_data <- X[train_index, ]
+test_data <- X[-train_index, ]
+train_target <- Y[train_index]
+test_target <- Y[-train_index]
+
+
+# Create a random forest model
+rf_model <- randomForest(x = train_data, y = train_target, ntree = 100, importance = TRUE, proximity = TRUE)
+
+
+# Cross Validation
+ctrl <- trainControl(method = "cv", number = 5)  # 5-fold 
+# Cross-validate the random forest model
+cv_results <- train(x = X, y = Y, method = "rf", trControl = ctrl, tuneGrid = expand.grid(mtry = 2), preProc = c("center", "scale"))
+
+# Print the summary of the random forest model
+rf_model
+cv_results
+plot(rf_model)
+
+# Print a plot of predictions vs. actuals
+
+predictions <- predict(rf_model, newdata = test_data)
+plot(test_target, predictions)
+varImpPlot(rf_model)
+```
+
+
+```{r}
+library(tree)
+library(randomForest)
+library(caret)
+
+set.seed(123)
+
+
+# Split the data into 70/30 testing/training sets
+train_index <- createDataPartition(Y, p = 0.7, list = FALSE)
+train_data <- X[train_index, ]
+test_data <- X[-train_index, ]
+happiness_score <- Y[train_index]
+test_target <- Y[-train_index]
+train <- cbind(happiness_score,train_data)
+
+# Create a decision tree model
+fit1 <- tree(happiness_score ~ ., data = train)
+
+# Print the tree model
+print(fit1)
+
+# Plot the tree
+plot(fit1)
+text(fit1)
+
+# Make predictions on the testing data
+test_predictions <- predict(fit1, newdata = test_data)
+
+# Calculate RMSE and R-squared for testing
+test_rmse <- sqrt(mean((test_target - test_predictions)^2))
+test_r_squared <- 1 - sum((test_target - test_predictions)^2) / sum((test_target - mean(test_target))^2)
+
+cat("Testing RMSE:", test_rmse, "\n")
+cat("Testing R-squared:", test_r_squared, "\n")
+```
